@@ -54,9 +54,19 @@ export function AuthProvider({ children }) {
       finishLoading(fallbackSession);
     }, 500);
 
+    // Periodically verify the user still exists on the server.
+    // getUser() validates against Supabase — unlike getSession() it won't
+    // return a deleted user. Fires every 2 minutes.
+    const heartbeat = setInterval(async () => {
+      if (!mounted) return;
+      const { error } = await supabase.auth.getUser();
+      if (error) await supabase.auth.signOut();
+    }, 2 * 60 * 1000);
+
     return () => {
       mounted = false;
       clearTimeout(fallback);
+      clearInterval(heartbeat);
       subscription.unsubscribe();
     };
   }, []);
