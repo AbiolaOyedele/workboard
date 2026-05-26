@@ -1047,6 +1047,73 @@ app.post('/verify/confirm', async (req, res) => {
   }
 });
 
+// ── POST /account/delete — permanently delete a user's account ───────────────
+//
+// The frontend cannot delete auth.users directly (requires service role key).
+// This endpoint verifies the caller's JWT matches the requested user_id, then
+// wipes all their data and deletes the auth record — CASCADE handles the rest.
+
+app.post('/account/delete', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+    if (!jwt) {
+      return res.status(401).json({ error: 'Missing authorization token.' });
+    }
+
+    // Verify the JWT and get the caller's user id
+    const { data: { user: caller }, error: authErr } = await supabase.auth.getUser(jwt);
+    if (authErr || !caller) {
+      return res.status(401).json({ error: 'Invalid or expired session.' });
+    }
+
+    const uid = caller.id;
+
+    // Delete all user data for tables that don't cascade from auth.users.
+    // Order matters: children before parents to avoid FK constraint errors.
+    const tables = [
+      // Fey — threads/tasks/sessions cascade from auth.users, but delete explicitly to be safe
+      { table: 'fey_tasks',            col: 'user_id' },
+      { table: 'fey_threads',          col: 'user_id' },
+      { table: 'fey_sessions',         col: 'user_id' },
+      { table: 'whatsapp_connections', col: 'user_id' },
+      { table: 'verification_codes',   col: 'user_id' },
+      // Campaigns
+      { table: 'campaign_tasks',       col: 'user_id' },
+      { table: 'client_campaigns',     col: 'user_id' },
+      // Core data
+      { table: 'tasks',                col: 'user_id' },
+      { table: 'retainer_payments',    col: 'user_id' },
+      { table: 'payment_records',      col: 'user_id' },
+      { table: 'standalone_tasks',     col: 'user_id' },
+      { table: 'task_groups',          col: 'user_id' },
+      { table: 'shared_clients',       col: 'owner_id' },
+      { table: 'clients',              col: 'user_id' },
+      { table: 'trash',                col: 'user_id' },
+      { table: 'app_settings',         col: 'user_id' },
+    ];
+
+    for (const { table, col } of tables) {
+      const { error } = await supabase.from(table).delete().eq(col, uid);
+      // Ignore "table does not exist" errors — schema may differ across envs
+      if (error && !error.message?.includes('does not exist')) {
+        console.warn(`[account/delete] ${table}:`, error.message);
+      }
+    }
+
+    // Delete the auth user — this cascades to any remaining FK references
+    const { error: deleteErr } = await supabase.auth.admin.deleteUser(uid);
+    if (deleteErr) throw deleteErr;
+
+    return res.json({ ok: true });
+  } catch (err) {
+    Sentry.captureException(err);
+    console.error('[account/delete]', err);
+    return res.status(500).json({ error: 'Account deletion failed. Try again.' });
+  }
+});
+
 // ── GET /health ───────────────────────────────────────────────────────────────
 
 app.get('/health', (_req, res) => res.json({ ok: true }));

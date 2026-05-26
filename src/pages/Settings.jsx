@@ -396,18 +396,29 @@ export default function Settings({ clients, refetch }) {
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteText !== 'DELETE') { setPwError(''); return; }
+    if (deleteText !== 'DELETE') return;
     try {
-      const uid = user?.id;
-      if (!uid) return;
-      await supabase.from('tasks').delete().eq('user_id', uid);
-      await supabase.from('retainer_payments').delete().eq('user_id', uid);
-      await supabase.from('clients').delete().eq('user_id', uid);
-      await supabase.from('standalone_tasks').delete().eq('user_id', uid);
-      await supabase.from('task_groups').delete().eq('user_id', uid);
-      await supabase.from('shared_clients').delete().eq('owner_id', uid);
-      await supabase.from('trash').delete().eq('user_id', uid);
-      await supabase.from('app_settings').delete().eq('user_id', uid);
+      if (!user?.id) return;
+
+      // Get the current session JWT — needed to authenticate the server-side delete
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        showToast('Session expired. Please log in again.');
+        return;
+      }
+
+      const res = await fetch(`${BOT_URL}/account/delete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        showToast(json.error || 'Account deletion failed. Try again.');
+        return;
+      }
+
+      // Auth record is deleted — sign out and redirect
       await signOut();
     } catch (err) {
       showToast(`Delete failed: ${err.message}`);
