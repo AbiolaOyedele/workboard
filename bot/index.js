@@ -204,6 +204,21 @@ function preClassify(message, today) {
   const todayStr = format(today, 'yyyy-MM-dd');
   const m = message.trim().toLowerCase();
 
+  // ── Date-specific queries ───────────────────────────────────────────────────
+
+  // Helper: resolve a relative day phrase to YYYY-MM-DD
+  const resolveRelativeDate = (phrase) => {
+    const p = phrase.trim().toLowerCase();
+    if (p === 'today') return todayStr;
+    if (p === 'yesterday') return format(subDays(today, 1), 'yyyy-MM-dd');
+    const lastMatch = p.match(/^last\s+(\w+)$/);
+    if (lastMatch) {
+      const dayNum = DAY_MAP[lastMatch[1]];
+      if (dayNum !== undefined) return format(previousDay(today, dayNum), 'yyyy-MM-dd');
+    }
+    return null;
+  };
+
   // "what tasks do I have today / for today / today's tasks" → show today's thread
   if (/\b(what|show|list).{0,30}(tasks?|todo|to-do|to do|work).{0,20}(today|for today)\b/.test(m)) {
     return { intent: 'query_date', params: { date: todayStr } };
@@ -213,6 +228,18 @@ function preClassify(message, today) {
   }
   if (/\b(today'?s?\s+(tasks?|list|todo)|tasks?\s+for\s+today)\b/.test(m)) {
     return { intent: 'query_date', params: { date: todayStr } };
+  }
+
+  // "tasks from yesterday / pending from yesterday / what did I have yesterday / last Monday tasks"
+  const relativeDateMatch = m.match(
+    /\b(tasks?|list|pending|work|todo|what.{0,20}(have|did))\b.{0,40}\b(yesterday|last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/
+  ) || m.match(
+    /\b(yesterday|last\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b.{0,40}\b(tasks?|list|pending|work|todo)\b/
+  );
+  if (relativeDateMatch) {
+    const phraseRaw = m.match(/\b(yesterday|last\s+\w+)\b/)?.[0];
+    const resolved = phraseRaw ? resolveRelativeDate(phraseRaw) : null;
+    if (resolved) return { intent: 'query_date', params: { date: resolved } };
   }
 
   // "what's pending / what do I have pending / pending tasks" → all pending
