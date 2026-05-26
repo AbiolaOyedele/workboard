@@ -780,8 +780,9 @@ app.post('/webhook', async (req, res) => {
     const { user_id } = connection;
 
     // ── 2. Handle "done X, Y" completions ──────────────────────────────────
-    const doneMatch = messageBody.match(/^done\s+([\d,\s]+)$/i);
-    if (doneMatch) {
+    // Accepts: "done 1", "done 1, 3", "done 9 and 10", "done 1, 2 and 3"
+    const doneMatch = messageBody.match(/^done\b([\s\d,]+(?:and[\s\d,]+)*)$/i);
+    if (doneMatch && /\d/.test(doneMatch[1])) {
       return reply(await handleDone(user_id, doneMatch[1]));
     }
 
