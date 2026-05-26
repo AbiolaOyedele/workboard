@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import Anthropic from '@anthropic-ai/sdk';
 import twilio from 'twilio';
 import ws from 'ws';
+import cron from 'node-cron';
 
 Sentry.init({ dsn: process.env.SENTRY_DSN, tracesSampleRate: 0.2 });
 import {
@@ -1049,6 +1050,156 @@ app.post('/verify/confirm', async (req, res) => {
 // ── GET /health ───────────────────────────────────────────────────────────────
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// ── Reminders ─────────────────────────────────────────────────────────────────
+
+/**
+ * Reads a single app_setting for a user.
+ * Returns the string value or null if not set.
+ */
+async function getUserSetting(userId, key) {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('user_id', userId)
+    .eq('key', key)
+    .maybeSingle();
+  return data?.value ?? null;
+}
+
+/**
+ * Sends a WhatsApp message from the bot to a user's registered number.
+ */
+async function sendWhatsApp(phoneNumber, body) {
+  await twilioClient.messages.create({
+    from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
+    to: `whatsapp:${phoneNumber}`,
+    body,
+  });
+}
+
+/**
+ * Deadline reminders — sends a message listing tasks due today.
+ * Only runs for users who have fey_deadline_reminders = "true".
+ */
+async function runDeadlineReminders() {
+  const todayStr = format(startOfDay(new Date()), 'yyyy-MM-dd');
+
+  const { data: connections } = await supabase
+    .from('whatsapp_connections')
+    .select('user_id, phone_number')
+    .eq('verified', true);
+
+  if (!connections?.length) return;
+
+  for (const conn of connections) {
+    try {
+      const enabled = await getUserSetting(conn.user_id, 'fey_deadline_reminders');
+      if (enabled !== 'true') continue;
+
+      const { data: tasks } = await supabase
+        .from('fey_tasks')
+        .select('id, title')
+        .eq('user_id', conn.user_id)
+        .eq('done', false)
+        .eq('deadline', todayStr)
+        .order('created_at', { ascending: true });
+
+      if (!tasks?.length) continue;
+
+      const taskMap = {};
+      const lines = tasks.map((t, i) => {
+        taskMap[String(i + 1)] = t.id;
+        return `${i + 1}. ${t.title}`;
+      });
+      await saveSession(conn.user_id, taskMap);
+
+      const msg = `*Reminder* — ${tasks.length} task${tasks.length > 1 ? 's' : ''} due today:\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
+      await sendWhatsApp(conn.phone_number, msg);
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error('[reminders:deadline]', conn.user_id, err.message);
+    }
+  }
+}
+
+/**
+ * Daily nudge — sends a short encouraging message with the pending task count.
+ * Only runs for users who have fey_daily_nudge = "true" and have pending tasks.
+ */
+async function runDailyNudge() {
+  const { data: connections } = await supabase
+    .from('whatsapp_connections')
+    .select('user_id, phone_number')
+    .eq('verified', true);
+
+  if (!connections?.length) return;
+
+  const nudgeOpeners = [
+    (n) => `Morning. ${n} task${n > 1 ? 's' : ''} pending — let's get through them.`,
+    (n) => `New day. You've got ${n} thing${n > 1 ? 's' : ''} waiting.`,
+    (n) => `Hey — ${n} pending task${n > 1 ? 's' : ''}. You've got this.`,
+    (n) => `Good morning. ${n} task${n > 1 ? 's' : ''} still on your list.`,
+    (n) => `${n} thing${n > 1 ? 's' : ''} to get done today. Make it count.`,
+  ];
+
+  for (const conn of connections) {
+    try {
+      const enabled = await getUserSetting(conn.user_id, 'fey_daily_nudge');
+      if (enabled !== 'true') continue;
+
+      const { data: pending } = await supabase
+        .from('fey_tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', conn.user_id)
+        .eq('done', false);
+
+      const count = pending?.length ?? 0;
+      if (count === 0) continue;
+
+      const opener = pick(nudgeOpeners)(count);
+      const msg = `${opener}\n\nSend "show pending" to see your list.`;
+      await sendWhatsApp(conn.phone_number, msg);
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error('[reminders:nudge]', conn.user_id, err.message);
+    }
+  }
+}
+
+/**
+ * Runs every hour on the hour.
+ * Checks which users have a reminder time matching the current UTC hour
+ * and dispatches deadline reminders + daily nudges accordingly.
+ */
+cron.schedule('0 * * * *', async () => {
+  const currentHour = new Date().getUTCHours();
+  console.log(`[cron] tick — UTC hour ${currentHour}`);
+
+  // Fetch all verified connections
+  const { data: connections } = await supabase
+    .from('whatsapp_connections')
+    .select('user_id')
+    .eq('verified', true);
+
+  if (!connections?.length) return;
+
+  // Build list of users whose reminder time matches this hour
+  const activeUserIds = new Set();
+  for (const conn of connections) {
+    const timeStr = await getUserSetting(conn.user_id, 'fey_reminder_time') ?? '08:00';
+    const [h] = timeStr.split(':').map(Number);
+    if (h === currentHour) activeUserIds.add(conn.user_id);
+  }
+
+  if (activeUserIds.size === 0) return;
+
+  console.log(`[cron] sending reminders to ${activeUserIds.size} user(s)`);
+  await Promise.allSettled([
+    runDeadlineReminders(),
+    runDailyNudge(),
+  ]);
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

@@ -303,6 +303,11 @@ export default function Settings({ clients, refetch }) {
   const [waError, setWaError]             = useState('');
   const [waDisconnecting, setWaDisconnecting] = useState(false);
 
+  // ── Fey reminder state ───────────────────────────────────────────────────────
+  const feyDeadlineReminders = settings.fey_deadline_reminders === 'true';
+  const feyDailyNudge        = settings.fey_daily_nudge === 'true';
+  const feyReminderTime      = settings.fey_reminder_time || '08:00';
+
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleAvatarUpload = (e) => {
@@ -1651,6 +1656,50 @@ export default function Settings({ clients, refetch }) {
                 Enter your number in international format — e.g. +2348012345678
               </p>
             </div>
+          )}
+        </SectionGroup>
+
+        <SectionGroup title="Reminders">
+          <SettingRow
+            icon={Bell}
+            title="Deadline reminders"
+            description="Get a WhatsApp message on the day a task is due"
+            action={
+              <Toggle
+                checked={feyDeadlineReminders}
+                onChange={(v) => saveSetting('fey_deadline_reminders', String(v))}
+              />
+            }
+          />
+          <SettingRow
+            icon={Sparkles}
+            title="Daily nudge"
+            description="A morning check-in with how many tasks you have pending"
+            action={
+              <Toggle
+                checked={feyDailyNudge}
+                onChange={(v) => saveSetting('fey_daily_nudge', String(v))}
+              />
+            }
+          />
+          {(feyDeadlineReminders || feyDailyNudge) && (
+            <SettingRow
+              icon={Star}
+              title="Reminder time"
+              description="Time reminders are sent — in UTC"
+              border={false}
+              action={
+                <select
+                  value={feyReminderTime}
+                  onChange={(e) => saveSetting('fey_reminder_time', e.target.value)}
+                  className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-200 text-sm outline-none focus:border-gray-400 transition-all"
+                >
+                  {['05:00','06:00','07:00','08:00','09:00','10:00','11:00','12:00'].map((t) => (
+                    <option key={t} value={t}>{t} UTC</option>
+                  ))}
+                </select>
+              }
+            />
           )}
         </SectionGroup>
 
