@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ChevronDown, CheckCircle2, Clock,
-  AlertTriangle, X, ListTodo, Check, Calendar, Trash2, GripVertical,
+  AlertTriangle, X, ListTodo, Check, Calendar, Trash2, GripVertical, Plus,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -267,9 +267,10 @@ export default function FeyWorkspace() {
   const accent = settings.accent_color || '#ED64A6';
   const todayStr = getTodayStr();
 
-  const { threads, loading, updateTask, deleteTask } = useFeyData(user?.id);
+  const { threads, loading, updateTask, deleteTask, addTask } = useFeyData(user?.id);
   const thread = threads.find((t) => t.id === id);
 
+  const [newTask, setNewTask] = useState('');
   const [taskFilter, setTaskFilter] = useState('all');
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [filterPos, setFilterPos] = useState({ top: 0, left: 0 });
@@ -294,6 +295,13 @@ export default function FeyWorkspace() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
   }, []);
+
+  const handleAddTask = useCallback(async () => {
+    if (!newTask.trim()) return;
+    const title = newTask.trim();
+    setNewTask('');
+    await addTask(thread.id, title);
+  }, [newTask, addTask, thread]);
 
   if (loading) {
     return (
@@ -461,6 +469,27 @@ export default function FeyWorkspace() {
               </p>
             </div>
           )}
+
+          {/* Add task input */}
+          <div className="px-4 py-3 border-t border-gray-100 flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Add a task…"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+              className="flex-1 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 text-sm outline-none focus:border-gray-300 focus:bg-white transition-all min-w-0 placeholder:text-gray-300"
+            />
+            <button
+              onClick={handleAddTask}
+              disabled={!newTask.trim()}
+              className="flex items-center gap-1 px-3 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-30 transition-all flex-shrink-0"
+              style={{ backgroundColor: accent }}
+            >
+              <Plus size={14} />
+              Add
+            </button>
+          </div>
         </div>
       </div>
 

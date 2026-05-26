@@ -51,13 +51,9 @@ function ThreadCard({ thread, color, onClick, onDelete, dragListeners, dragAttri
         </span>
       </div>
 
-      <h3 className="font-display text-xl font-bold mb-1 leading-tight line-clamp-1" style={{ color: textColor }}>
+      <h3 className="font-display text-xl font-bold mb-4 leading-tight line-clamp-1" style={{ color: textColor }}>
         {formatDate(thread.message_date)}
       </h3>
-
-      <p className="text-sm mb-4 line-clamp-1" style={{ color: textColor, opacity: 0.7 }}>
-        {thread.heading}
-      </p>
 
       <div className="flex items-center justify-between">
         <div className="flex-1 mr-4">

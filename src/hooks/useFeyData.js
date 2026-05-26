@@ -55,6 +55,11 @@ export function useFeyData(userId) {
         { event: 'INSERT', schema: 'public', table: 'fey_threads', filter: `user_id=eq.${userId}` },
         () => setTimeout(fetchData, 500),
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'fey_tasks', filter: `user_id=eq.${userId}` },
+        () => setTimeout(fetchData, 500),
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -95,5 +100,34 @@ export function useFeyData(userId) {
     await supabase.from('fey_tasks').delete().eq('id', taskId);
   }, []);
 
-  return { threads, loading, error, toggleTask, updateTask, deleteThread, deleteTask, refetch: fetchData };
+  const addTask = useCallback(async (threadId, title) => {
+    const thread = threads.find((th) => th.id === threadId);
+    const maxOrder = thread && thread.tasks.length > 0
+      ? Math.max(...thread.tasks.map((t) => t.sort_order ?? 0))
+      : -1;
+
+    const { data, error: insertError } = await supabase
+      .from('fey_tasks')
+      .insert({
+        thread_id: threadId,
+        user_id: userId,
+        title: title.trim(),
+        notes: null,
+        deadline: null,
+        done: false,
+        sort_order: maxOrder + 1,
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    setThreads((prev) =>
+      prev.map((th) =>
+        th.id === threadId ? { ...th, tasks: [...th.tasks, data] } : th,
+      ),
+    );
+  }, [threads, userId]);
+
+  return { threads, loading, error, toggleTask, updateTask, deleteThread, deleteTask, addTask, refetch: fetchData };
 }

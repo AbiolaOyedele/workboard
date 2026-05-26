@@ -400,7 +400,7 @@ export default function Settings({ clients, refetch }) {
       await supabase.from('clients').delete().eq('user_id', uid);
       await supabase.from('standalone_tasks').delete().eq('user_id', uid);
       await supabase.from('task_groups').delete().eq('user_id', uid);
-      await supabase.from('shared_clients').delete().eq('user_id', uid);
+      await supabase.from('shared_clients').delete().eq('owner_id', uid);
       await supabase.from('trash').delete().eq('user_id', uid);
       await supabase.from('app_settings').delete().eq('user_id', uid);
       await signOut();

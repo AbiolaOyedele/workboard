@@ -100,8 +100,8 @@ function SharedTaskRow({ task, permission, onToggleDone, onTogglePaid }) {
       {/* Paid badge — edit only */}
       {canEdit && task.done && (
         <button
-          onClick={onTogglePaid}
-          className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+          onClick={(e) => { e.stopPropagation(); onTogglePaid(); }}
+          className={`flex-shrink-0 px-3 py-2 rounded-lg text-xs font-medium transition-colors min-h-[36px] ${
             task.paid ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
           }`}
         >
@@ -113,11 +113,11 @@ function SharedTaskRow({ task, permission, onToggleDone, onTogglePaid }) {
 }
 
 // ── Error page ────────────────────────────────────────────────────────────────
-function ErrorPage({ message = 'This link is no longer available.' }) {
+function ErrorPage({ title = 'Link Unavailable', message = 'This link is no longer available.' }) {
   return (
     <div className="min-h-screen bg-[#F5F5F7] flex flex-col items-center justify-center px-6 text-center">
       <img src="/favicon.svg" alt="WorkBoard" className="w-9 h-9 rounded-xl mb-8" />
-      <p className="font-display text-2xl font-bold text-gray-900 mb-2">Link Unavailable</p>
+      <p className="font-display text-2xl font-bold text-gray-900 mb-2">{title}</p>
       <p className="text-gray-500 text-sm max-w-xs">{message}</p>
     </div>
   );
@@ -169,7 +169,7 @@ function WelcomePage({ shareRecord, clientName, onAccept, prefillCode }) {
       .insert({ shared_client_id: shareRecord.id, name: name.trim() })
       .select()
       .single();
-    if (memberErr) { setError(memberErr.message); setLoading(false); return; }
+    if (memberErr) { setError("Couldn't join the workspace. Please try again."); setLoading(false); return; }
 
     // Mark invite code as used
     await supabase
@@ -646,8 +646,9 @@ const FILTER_OPTIONS = [
 
 function SharedDashboard({ shareRecord, client, tasks, setTasks, member, permission }) {
   const navigate = useNavigate();
-  const [newTask, setNewTask]       = useState('');
-  const [addingTask, setAddingTask] = useState(false);
+  const [newTask, setNewTask]         = useState('');
+  const [addingTask, setAddingTask]   = useState(false);
+  const [addTaskError, setAddTaskError] = useState('');
   const [filter, setFilter]         = useState('all');
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterPos, setFilterPos]   = useState({ top: 0, left: 0 });
@@ -730,6 +731,7 @@ function SharedDashboard({ shareRecord, client, tasks, setTasks, member, permiss
   const handleAddTask = async () => {
     if (!newTask.trim() || !canEdit) return;
     setAddingTask(true);
+    setAddTaskError('');
     const maxSort = tasks.length > 0 ? Math.max(...tasks.map((t) => t.sort_order ?? 0)) + 1 : 0;
     const { data, error } = await supabase
       .from('tasks')
@@ -745,6 +747,8 @@ function SharedDashboard({ shareRecord, client, tasks, setTasks, member, permiss
         sort_order: data.sort_order ?? maxSort,
       }]);
       setNewTask('');
+    } else if (error) {
+      setAddTaskError("Couldn't add task. Please try again.");
     }
     setAddingTask(false);
   };
@@ -879,7 +883,11 @@ function SharedDashboard({ shareRecord, client, tasks, setTasks, member, permiss
 
           {/* Add task — edit only */}
           {canEdit && (
-            <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-4">
+            <div className="mt-4 border-t border-gray-100 pt-4">
+            {addTaskError && (
+              <p className="text-xs text-red-500 mb-2">{addTaskError}</p>
+            )}
+            <div className="flex items-center gap-2">
               <input
                 ref={taskInputRef}
                 type="text"
@@ -900,6 +908,7 @@ function SharedDashboard({ shareRecord, client, tasks, setTasks, member, permiss
                 {addingTask ? <Loader2 size={14} className="animate-spin" /> : <Plus size={16} />}
                 Add
               </button>
+            </div>
             </div>
           )}
         </div>
@@ -1044,6 +1053,8 @@ export default function SharedClientPage() {
   const location = useLocation();
   const prefillCode = new URLSearchParams(location.search).get('code') || '';
   const [phase, setPhase] = useState('loading'); // loading | error | welcome | dashboard | revoked
+  const [errorTitle, setErrorTitle] = useState('Link Unavailable');
+  const [errorMessage, setErrorMessage] = useState('This link is no longer available.');
   const [shareRecord, setShareRecord] = useState(null);
   const [client, setClient] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -1058,14 +1069,28 @@ export default function SharedClientPage() {
       const storedMember = stored ? JSON.parse(stored) : null;
 
       // Fetch share record — no auth required (RLS disabled)
+      // Query without active filter so we can give a specific message for each failure case
       const { data: share, error: shareErr } = await supabase
         .from('shared_clients')
         .select('*')
         .eq('token', token)
-        .eq('active', true)
         .maybeSingle();
 
-      if (shareErr || !share) { setPhase('error'); return; }
+      if (shareErr) {
+        setErrorTitle('Something went wrong');
+        setErrorMessage("We couldn't load this workspace. Try refreshing the page.");
+        setPhase('error'); return;
+      }
+      if (!share) {
+        setErrorTitle('Workspace Not Found');
+        setErrorMessage('This workspace no longer exists. The owner may have deleted their account.');
+        setPhase('error'); return;
+      }
+      if (!share.active) {
+        setErrorTitle('Workspace Deactivated');
+        setErrorMessage('The owner has deactivated this shared workspace.');
+        setPhase('error'); return;
+      }
       setShareRecord(share);
 
       // Build client object from cached fields in shared_clients
@@ -1158,7 +1183,7 @@ export default function SharedClientPage() {
     );
   }
 
-  if (phase === 'error') return <ErrorPage />;
+  if (phase === 'error') return <ErrorPage title={errorTitle} message={errorMessage} />;
 
   if (phase === 'revoked') return <AccessRevokedPage token={token} />;
 

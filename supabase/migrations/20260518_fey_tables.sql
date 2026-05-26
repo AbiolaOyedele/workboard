@@ -14,6 +14,10 @@ create policy "fey_threads_select_own"
   on public.fey_threads for select
   using (auth.uid() = user_id);
 
+create policy "fey_threads_insert_own"
+  on public.fey_threads for insert
+  with check (auth.uid() = user_id);
+
 create policy "fey_threads_delete_own"
   on public.fey_threads for delete
   using (auth.uid() = user_id);
@@ -32,6 +36,10 @@ create table if not exists public.fey_tasks (
 );
 
 alter table public.fey_tasks enable row level security;
+
+create policy "fey_tasks_insert_own"
+  on public.fey_tasks for insert
+  with check (auth.uid() = user_id);
 
 create policy "fey_tasks_select_own"
   on public.fey_tasks for select
