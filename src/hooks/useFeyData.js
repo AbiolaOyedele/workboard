@@ -50,14 +50,22 @@ export function useFeyData(userId) {
 
     const channel = supabase
       .channel(`fey:${userId}`)
+      // New thread created by Fey
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'fey_threads', filter: `user_id=eq.${userId}` },
         () => setTimeout(fetchData, 500),
       )
+      // New task added by Fey
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'fey_tasks', filter: `user_id=eq.${userId}` },
+        () => setTimeout(fetchData, 500),
+      )
+      // Task marked done / edited by Fey (e.g. "done 1, 3" via WhatsApp)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'fey_tasks', filter: `user_id=eq.${userId}` },
         () => setTimeout(fetchData, 500),
       )
       .subscribe();
