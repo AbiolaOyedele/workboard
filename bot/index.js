@@ -280,8 +280,27 @@ function preClassify(message, today) {
     return { intent: 'query_summary', params: {} };
   }
 
-  // Message starts with a question word → almost certainly a query, let Haiku handle it
-  // but at least flag it so we don't silently fall through
+  // "move pending to tomorrow / push tasks to tomorrow / reschedule to Friday"
+  const moveTomorrowMatch = /\b(move|push|reschedule|carry|shift).{0,20}(pending|tasks?|everything).{0,20}\b(tomorrow|next\s+\w+|this\s+\w+|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(m)
+    || /\b(move|push|reschedule|carry|shift).{0,20}\b(tomorrow)\b/.test(m);
+  if (moveTomorrowMatch) {
+    const tomorrowStr = format(addDays(today, 1), 'yyyy-MM-dd');
+    // Try to detect a specific day name, otherwise default to tomorrow
+    const dayMatch = m.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/);
+    if (dayMatch) {
+      const dayNum = DAY_MAP[dayMatch[1]];
+      if (dayNum !== undefined) {
+        // Find the next occurrence of that day
+        let target = addDays(today, 1);
+        while (format(target, 'EEEE').toLowerCase() !== dayMatch[1]) {
+          target = addDays(target, 1);
+        }
+        return { intent: 'move_pending', params: { to_date: format(target, 'yyyy-MM-dd') } };
+      }
+    }
+    return { intent: 'move_pending', params: { to_date: tomorrowStr } };
+  }
+
   return null;
 }
 
@@ -312,7 +331,8 @@ Intents and their params:
 - "query_due_week"   — asking what is due this week. Examples: "what's due this week?". params: {}
 - "query_upcoming"   — asking about upcoming deadlines (next 2 weeks). Examples: "what's coming up?", "upcoming deadlines". params: {}
 - "query_summary"    — asking for a progress summary or overview. Examples: "how am I doing?", "give me a summary", "progress update". params: {}
-- "copy_pending"     — asking to copy unfinished tasks from another date to today. Examples: "copy yesterday's pending to today". params: { "from_date": "YYYY-MM-DD" }
+- "copy_pending"     — asking to copy unfinished tasks from a past date to today. Examples: "copy yesterday's pending to today". params: { "from_date": "YYYY-MM-DD" }
+- "move_pending"     — asking to move all pending tasks to a future date. Examples: "move pending to tomorrow", "push tasks to tomorrow", "move everything to Friday", "reschedule pending to next Monday". params: { "to_date": "YYYY-MM-DD" }
 
 Rules:
 - CRITICAL: Any message phrased as a question (starting with what, which, how, show, list, do I have, anything, any, etc.) is ALWAYS a query — never "add_tasks".
@@ -714,6 +734,59 @@ async function handleCopyPending(userId, fromDateStr) {
   return `Copied ${pending.length} task${pending.length > 1 ? 's' : ''} from ${fmtDate(fromDateStr)} to today.\n\n${taskLines}`;
 }
 
+/**
+ * Move all pending tasks to a target date's thread.
+ * The originals are marked done so they leave the pending list.
+ */
+async function handleMovePending(userId, toDateStr) {
+  const todayStr = format(startOfDay(new Date()), 'yyyy-MM-dd');
+  const toLabel = toDateStr === todayStr ? 'today' : fmtDate(toDateStr);
+
+  // Fetch all pending tasks across all threads
+  const { data: pending, error } = await supabase
+    .from('fey_tasks')
+    .select('id, title, notes, deadline')
+    .eq('user_id', userId)
+    .eq('done', false)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  if (!pending || pending.length === 0) return "Nothing pending to move.";
+
+  // Get or create the target thread
+  const threadId = await getOrCreateThread(userId, toDateStr, 'Moved tasks');
+
+  const { count: existingCount } = await supabase
+    .from('fey_tasks')
+    .select('*', { count: 'exact', head: true })
+    .eq('thread_id', threadId);
+
+  // Insert copies into the target thread
+  const rows = pending.map((t, i) => ({
+    thread_id: threadId,
+    user_id: userId,
+    title: t.title,
+    notes: t.notes,
+    deadline: t.deadline,
+    done: false,
+    sort_order: (existingCount ?? 0) + i,
+  }));
+
+  const { error: insertError } = await supabase.from('fey_tasks').insert(rows);
+  if (insertError) throw insertError;
+
+  // Mark originals as done so they leave the pending list
+  const { error: doneError } = await supabase
+    .from('fey_tasks')
+    .update({ done: true })
+    .in('id', pending.map((t) => t.id));
+
+  if (doneError) throw doneError;
+
+  const taskLines = pending.map((t) => `• ${t.title}`).join('\n');
+  return `Moved ${pending.length} task${pending.length > 1 ? 's' : ''} to ${toLabel}.\n\n${taskLines}`;
+}
+
 /** Mark tasks done by number from the user's last session */
 async function handleDone(userId, numbersStr) {
   const session = await getSession(userId);
@@ -806,6 +879,7 @@ app.post('/webhook', async (req, res) => {
         case 'query_upcoming':   result = await handleQueryUpcoming(user_id); break;
         case 'query_summary':    result = await handleQuerySummary(user_id); break;
         case 'copy_pending':     result = await handleCopyPending(user_id, params.from_date); break;
+        case 'move_pending':     result = await handleMovePending(user_id, params.to_date); break;
         default: break;
       }
 
