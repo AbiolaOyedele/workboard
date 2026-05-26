@@ -406,14 +406,14 @@ async function handleQueryPending(userId) {
     .order('created_at', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "✅ Nothing pending. You're all caught up!";
+  if (!tasks || tasks.length === 0) return "Nothing pending. You're all caught up.";
 
   const taskMap = {};
   const lines = tasks.map((t, i) => {
     taskMap[String(i + 1)] = t.id;
     let line = `${i + 1}. ${t.title}`;
     if (t.deadline) {
-      if (t.deadline < todayStr) line += ` — ${fmtDateShort(t.deadline)} ⚠️`;
+      if (t.deadline < todayStr) line += ` — ${fmtDateShort(t.deadline)} (overdue)`;
       else if (t.deadline === todayStr) line += ` — today`;
       else line += ` — ${fmtDateShort(t.deadline)}`;
     }
@@ -422,7 +422,7 @@ async function handleQueryPending(userId) {
 
   await saveSession(userId, taskMap);
 
-  return `📋 Pending (${tasks.length})\n\n${lines.join('\n')}\n\nReply "done 1, 3" to tick off tasks.`;
+  return `*Pending (${tasks.length})*\n\n${lines.join('\n')}\n\nReply "done 1, 3" to tick off.`;
 }
 
 /** Overdue tasks only */
@@ -439,7 +439,7 @@ async function handleQueryOverdue(userId) {
     .order('deadline', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "✅ No overdue tasks.";
+  if (!tasks || tasks.length === 0) return "No overdue tasks.";
 
   const today = startOfDay(new Date());
   const taskMap = {};
@@ -451,7 +451,7 @@ async function handleQueryOverdue(userId) {
 
   await saveSession(userId, taskMap);
 
-  return `⚠️ Overdue (${tasks.length})\n\n${lines.join('\n')}\n\nReply "done 1" to mark complete.`;
+  return `*Overdue (${tasks.length})*\n\n${lines.join('\n')}\n\nReply "done 1" to mark complete.`;
 }
 
 /** Tasks for a specific date */
@@ -466,7 +466,7 @@ async function handleQueryDate(userId, dateStr) {
     .eq('message_date', dateStr)
     .maybeSingle();
 
-  if (!thread) return `📅 Nothing logged for ${label}.`;
+  if (!thread) return `Nothing logged for ${label}.`;
 
   const { data: tasks, error } = await supabase
     .from('fey_tasks')
@@ -475,19 +475,19 @@ async function handleQueryDate(userId, dateStr) {
     .order('sort_order', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return `📅 Nothing logged for ${label}.`;
+  if (!tasks || tasks.length === 0) return `Nothing logged for ${label}.`;
 
   const taskMap = {};
   const lines = tasks.map((t, i) => {
     if (!t.done) taskMap[String(i + 1)] = t.id;
-    return `${t.done ? '✅' : `${i + 1}.`} ${t.title}`;
+    return t.done ? `~${t.title}~` : `${i + 1}. ${t.title}`;
   });
 
   const hasPending = Object.keys(taskMap).length > 0;
   await saveSession(userId, taskMap);
 
-  const suffix = hasPending ? '\n\nReply "done 1" to tick off tasks.' : '';
-  return `📅 ${label}\n\n${lines.join('\n')}${suffix}`;
+  const suffix = hasPending ? '\n\nReply "done 1" to tick off.' : '';
+  return `*${label}*\n\n${lines.join('\n')}${suffix}`;
 }
 
 /** What was completed today */
@@ -501,7 +501,7 @@ async function handleQueryDoneToday(userId) {
     .eq('message_date', todayStr)
     .maybeSingle();
 
-  if (!thread) return "📅 Nothing logged today yet.";
+  if (!thread) return "Nothing logged today yet.";
 
   const { data: tasks, error } = await supabase
     .from('fey_tasks')
@@ -511,9 +511,9 @@ async function handleQueryDoneToday(userId) {
     .order('sort_order', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "⬜ Nothing completed today yet.";
+  if (!tasks || tasks.length === 0) return "Nothing completed today yet.";
 
-  return `Today's completed (${tasks.length})\n\n${tasks.map((t) => `✅ ${t.title}`).join('\n')}`;
+  return `*Completed today (${tasks.length})*\n\n${tasks.map((t) => `~${t.title}~`).join('\n')}`;
 }
 
 /** Summary of completed tasks this week (last 7 days) */
@@ -529,7 +529,7 @@ async function handleQueryDoneWeek(userId) {
     .gte('message_date', weekStartStr)
     .lte('message_date', todayStr);
 
-  if (!threads || threads.length === 0) return "📅 Nothing logged this week yet.";
+  if (!threads || threads.length === 0) return "Nothing logged this week yet.";
 
   const { data: tasks, error } = await supabase
     .from('fey_tasks')
@@ -538,9 +538,9 @@ async function handleQueryDoneWeek(userId) {
     .eq('done', true);
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "⬜ Nothing completed this week yet.";
+  if (!tasks || tasks.length === 0) return "Nothing completed this week yet.";
 
-  return `This week's completed (${tasks.length})\n\n${tasks.map((t) => `✅ ${t.title}`).join('\n')}`;
+  return `*Completed this week (${tasks.length})*\n\n${tasks.map((t) => `~${t.title}~`).join('\n')}`;
 }
 
 /** Tasks due today */
@@ -556,14 +556,14 @@ async function handleQueryDueToday(userId) {
     .order('created_at', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "✅ Nothing due today.";
+  if (!tasks || tasks.length === 0) return "Nothing due today.";
 
   const taskMap = {};
   const lines = tasks.map((t, i) => { taskMap[String(i + 1)] = t.id; return `${i + 1}. ${t.title}`; });
 
   await saveSession(userId, taskMap);
 
-  return `📅 Due today (${tasks.length})\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
+  return `*Due today (${tasks.length})*\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
 }
 
 /** Tasks due in the next 7 days */
@@ -582,7 +582,7 @@ async function handleQueryDueWeek(userId) {
     .order('deadline', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "✅ Nothing due this week.";
+  if (!tasks || tasks.length === 0) return "Nothing due this week.";
 
   const taskMap = {};
   const lines = tasks.map((t, i) => {
@@ -592,7 +592,7 @@ async function handleQueryDueWeek(userId) {
 
   await saveSession(userId, taskMap);
 
-  return `📅 Due this week (${tasks.length})\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
+  return `*Due this week (${tasks.length})*\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
 }
 
 /** Upcoming deadlines in the next 14 days */
@@ -612,7 +612,7 @@ async function handleQueryUpcoming(userId) {
     .order('deadline', { ascending: true });
 
   if (error) throw error;
-  if (!tasks || tasks.length === 0) return "✅ No deadlines in the next 2 weeks.";
+  if (!tasks || tasks.length === 0) return "No deadlines in the next 2 weeks.";
 
   const taskMap = {};
   const lines = tasks.map((t, i) => {
@@ -622,7 +622,7 @@ async function handleQueryUpcoming(userId) {
 
   await saveSession(userId, taskMap);
 
-  return `🗓 Upcoming deadlines (${tasks.length})\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
+  return `*Upcoming deadlines (${tasks.length})*\n\n${lines.join('\n')}\n\nReply "done 1" to tick off.`;
 }
 
 /** Weekly progress summary */
@@ -656,16 +656,16 @@ async function handleQuerySummary(userId) {
   }
 
   const total = completed + pending + overdue;
-  if (total === 0) return "📅 Nothing logged this week yet.";
+  if (total === 0) return "Nothing logged this week yet.";
 
   const pct = Math.round((completed / total) * 100);
   let mood;
-  if (pct >= 80) mood = 'Great work this week. 🔥';
+  if (pct >= 80) mood = 'Great work this week.';
   else if (pct >= 50) mood = 'Good progress — keep going.';
   else mood = 'Plenty to get through — you got this.';
 
-  const overdueStr = overdue > 0 ? `\n⚠️ Overdue: ${overdue}` : '';
-  return `📊 This week\n\n✅ Completed: ${completed}\n⬜ Pending: ${pending}${overdueStr}\n\n${pct}% done — ${mood}`;
+  const overdueStr = overdue > 0 ? `\nOverdue: ${overdue}` : '';
+  return `*This week*\n\nCompleted: ${completed}\nPending: ${pending}${overdueStr}\n\n${pct}% done — ${mood}`;
 }
 
 /** Copy pending tasks from a past date into today's thread */
@@ -677,7 +677,7 @@ async function handleCopyPending(userId, fromDateStr) {
     .eq('message_date', fromDateStr)
     .maybeSingle();
 
-  if (!fromThread) return `📅 No tasks found for ${fmtDate(fromDateStr)}.`;
+  if (!fromThread) return `No tasks found for ${fmtDate(fromDateStr)}.`;
 
   const { data: pending, error } = await supabase
     .from('fey_tasks')
@@ -687,7 +687,7 @@ async function handleCopyPending(userId, fromDateStr) {
     .order('sort_order', { ascending: true });
 
   if (error) throw error;
-  if (!pending || pending.length === 0) return `✅ No pending tasks on ${fmtDate(fromDateStr)}.`;
+  if (!pending || pending.length === 0) return `No pending tasks on ${fmtDate(fromDateStr)}.`;
 
   const todayStr = format(startOfDay(new Date()), 'yyyy-MM-dd');
   const threadId = await getOrCreateThread(userId, todayStr, 'Carried over tasks');
@@ -711,7 +711,7 @@ async function handleCopyPending(userId, fromDateStr) {
   if (insertError) throw insertError;
 
   const taskLines = pending.map((t) => `• ${t.title}`).join('\n');
-  return `✅ Copied ${pending.length} task${pending.length > 1 ? 's' : ''} from ${fmtDate(fromDateStr)} to today.\n\n${taskLines}`;
+  return `Copied ${pending.length} task${pending.length > 1 ? 's' : ''} from ${fmtDate(fromDateStr)} to today.\n\n${taskLines}`;
 }
 
 /** Mark tasks done by number from the user's last session */
@@ -719,14 +719,14 @@ async function handleDone(userId, numbersStr) {
   const session = await getSession(userId);
 
   if (!session) {
-    return "⏱ Your last list has expired. Send a query to get a fresh one.";
+    return "Your last list has expired. Send a query to get a fresh one.";
   }
 
   const numbers = numbersStr.match(/\d+/g) || [];
   const taskIds = [...new Set(numbers.map((n) => session[n]).filter(Boolean))];
 
   if (taskIds.length === 0) {
-    return "❌ None of those numbers matched your last list. Send a query again.";
+    return "None of those numbers matched your last list. Send a query again.";
   }
 
   const { error } = await supabase
@@ -737,7 +737,7 @@ async function handleDone(userId, numbersStr) {
 
   if (error) throw error;
 
-  return `✅ Marked ${taskIds.length} task${taskIds.length > 1 ? 's' : ''} as done.`;
+  return `Marked ${taskIds.length} task${taskIds.length > 1 ? 's' : ''} as done.`;
 }
 
 // ── Express app ───────────────────────────────────────────────────────────────
@@ -761,7 +761,7 @@ app.post('/webhook', async (req, res) => {
     const messageBody = (req.body.Body || '').trim();
     const phone = normalizePhone(fromRaw);
 
-    if (!messageBody) return reply('❌ Empty message received. Try again.');
+    if (!messageBody) return reply('Empty message received. Try again.');
 
     // ── 1. Verify sender ────────────────────────────────────────────────────
     const { data: connection } = await supabase
@@ -828,7 +828,7 @@ app.post('/webhook', async (req, res) => {
     if (lookupError) throw lookupError;
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
-      return reply("❌ Couldn't extract any tasks from your message. Try again.");
+      return reply("Couldn't extract any tasks from your message. Try again.");
     }
 
     let threadId;
