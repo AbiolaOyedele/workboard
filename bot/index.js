@@ -817,7 +817,11 @@ async function handleDone(userId, numbersStr) {
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.urlencoded({ extended: false })); // Twilio sends URL-encoded form data
 app.use(express.json());
 
